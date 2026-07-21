@@ -27,6 +27,8 @@ import logging
 import os
 import random
 import sqlite3
+import threading
+import http.server
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -371,6 +373,28 @@ async def unknown_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+
+
+# --------------------------------------------------------------------------- #
+# Health-check HTTP server (for platform probing on port 8000)
+# --------------------------------------------------------------------------- #
+
+class _HealthHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'OK')
+    def log_message(self, *args):
+        pass  # silence access logs
+
+
+def _start_health_server():
+    port = int(os.environ.get('PORT', 8000))
+    server = http.server.HTTPServer(('0.0.0.0', port), _HealthHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    logger.info('Health-check server listening on port %d', port)
+
 # --------------------------------------------------------------------------- #
 # Точка входа
 # --------------------------------------------------------------------------- #
@@ -395,6 +419,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text))
 
+    _start_health_server()
     logger.info("Bot started, polling...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
